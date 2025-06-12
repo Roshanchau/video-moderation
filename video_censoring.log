@@ -1,0 +1,11 @@
+2025-06-12 13:39:58,375 - INFO - Preprocessing video: test.mp4
+2025-06-12 13:40:05,269 - INFO - Preprocessing video: test.mp4
+2025-06-12 13:57:12,754 - INFO - ✓ FFmpeg verified
+2025-06-12 13:57:12,755 - WARNING - ⚠ GOOGLE_APPLICATION_CREDENTIALS not set. Ensure you have proper authentication.
+2025-06-12 13:57:12,757 - INFO - Starting video processing: test.mp4
+2025-06-12 13:57:12,757 - INFO - Preprocessing video: test.mp4
+2025-06-12 13:57:32,220 - INFO - ✓ Video preprocessed and saved to: temp_video_processing\preprocessed_test.mp4
+2025-06-12 13:57:32,221 - INFO - Starting video transcription...
+2025-06-12 13:57:34,806 - ERROR - X Transcription failed: Unknown field for SpeechTranscriptionConfig: enable_word_time_offsets
+2025-06-12 13:57:34,806 - ERROR - X Processing failed: Transcription failed: Unknown field for SpeechTranscriptionConfig: enable_word_time_offsets
+2025-06-12 13:57:34,808 - INFO - Temporary files cleaned up
