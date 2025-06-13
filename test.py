@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+gemini_api_key= os.getenv("GOOGLE_API_KEY")
 
 def check_ffmpeg():
     try:
@@ -59,7 +60,7 @@ def transcribe_video(input_path):
         if file_size > 20:
             raise ValueError("Video file must be smaller than 20MB for direct upload")
 
-        client = genai.Client(os.getenv("GOOGLE_API_KEY"))
+        client = genai.Client(api_key=gemini_api_key)
 
         print("\nProcessing video for speech transcription...")
         video_bytes = open(input_path, 'rb').read()
