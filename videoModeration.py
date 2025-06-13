@@ -1,9 +1,11 @@
 import google.genai as genai
 from google.genai import types
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def moderate_youtube_video(youtube_url):
-    client = genai.Client(api_key='AIzaSyC7RPvt2RM7rCGsRuB7dHe8u2kXVVCbmE8')
-
+    client = genai.Client(os.getenv("GOOGLE_API_KEY"))
 
     response = client.models.generate_content(  
         model='models/gemini-2.0-flash',

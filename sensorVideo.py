@@ -8,6 +8,10 @@ import re
 import google.genai as genai
 from google.genai import types
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def check_ffmpeg():
     try:
@@ -49,7 +53,8 @@ def transcribe_video(input_path):
         if file_size > 20:
             raise ValueError("Video file must be smaller than 20MB for direct upload")
 
-        client = genai.Client(api_key='AIzaSyC7RPvt2RM7rCGsRuB7dHe8u2kXVVCbmE8')
+        client = genai.Client(os.getenv("GOOGLE_API_KEY"))
+
 
         print("\nProcessing video for speech transcription...")
         video_bytes = open(input_path, 'rb').read()

@@ -7,6 +7,9 @@ import sys
 import re
 import google.genai as genai
 from google.genai import types
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def check_ffmpeg():
@@ -32,7 +35,13 @@ VULGAR_WORDS = {
     "asshole": ["asshole", "arsehole"],
     "bitch": ["bitch", "bitches", "bitching"],
     "damn": ["damn", "goddamn"],
-    "crap": ["crap", "crappy"]
+    "crap": ["crap", "crappy"],
+    "phone_number": [
+        r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b',  # 205-234-1333 or 205.234.1333 or 205 234 1333
+        r'\b\d{3}\s\d{3}\s\d{4}\b',  # 205 234 1333
+        r'\b\d{10}\b',  # 2052341333
+        r'\b\(\d{3}\)\s?\d{3}[-.\s]?\d{4}\b'  # (205) 234-1333
+    ]
 }
 
 
@@ -50,7 +59,7 @@ def transcribe_video(input_path):
         if file_size > 20:
             raise ValueError("Video file must be smaller than 20MB for direct upload")
 
-        client = genai.Client(api_key='AIzaSyCxGVXk_qmDB4PQBtKkfdqaS7qPL5e1t1M')
+        client = genai.Client(os.getenv("GOOGLE_API_KEY"))
 
         print("\nProcessing video for speech transcription...")
         video_bytes = open(input_path, 'rb').read()
@@ -93,25 +102,50 @@ def transcribe_video(input_path):
             try:
                 start_sec = convert_timestamp_to_seconds(entry['timestamp'])
                 duration = float(entry['duration'])
-                words = entry['words'].split()
+                text = entry['words']
+                words = text.split()
 
+                # Enhanced phone number detection
+                phone_patterns = [
+                    r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b',  # 205-859-2113 or 205 859 2113
+                    r'\b\(\d{3}\)\s?\d{3}[-.\s]?\d{4}\b'   # (205) 859-2113
+                ]
+
+                # Check all phone patterns against the full text
+                for pattern in phone_patterns:
+                    for match in re.finditer(pattern, text):
+                        full_number = match.group()
+                        match_start = match.start()
+                        match_end = match.end()
+                        
+                        # Calculate exact timing for the entire phone number
+                        total_text_length = max(len(text), 1)  # Avoid division by zero
+                        number_start_sec = start_sec + (match_start / total_text_length) * duration
+                        number_end_sec = start_sec + (match_end / total_text_length) * duration
+                        
+                        # Only add if we haven't already detected this number
+                        if not any(abs(ts[0] - number_start_sec) < 0.01 for ts in word_timestamps):
+                            word_timestamps.append((number_start_sec, number_end_sec, "phone_number"))
+                            print(f"⚠️ Phone number detected: '{full_number}' at {number_start_sec:.2f}s - {number_end_sec:.2f}s")
+
+                # Vulgar word detection
                 per_word_dur = duration / len(words) if words else 0
-
                 for i, word in enumerate(words):
                     clean_word = word.strip().lower().strip(".,!?\"'")
                     for base, variants in VULGAR_WORDS.items():
-                        if clean_word in variants:
+                        if base != "phone_number" and clean_word in variants:
                             word_start = start_sec + i * per_word_dur
                             word_end = word_start + per_word_dur
                             word_timestamps.append((word_start, word_end, base))
                             print(f"⚠️ Vulgar word detected: '{clean_word}' ({base}) at {word_start:.2f}s - {word_end:.2f}s")
+                            
             except Exception as e:
                 print(f"⚠️ Skipped malformed entry: {entry} due to {e}")
 
         if word_timestamps:
-            print("\n✅ Vulgar words found:", word_timestamps)
+            print("\n✅ Censorable content found:", word_timestamps)
         else:
-            print("\n✅ No vulgar words detected. Original video is clean.")
+            print("\n✅ No censorable content detected. Original video is clean.")
 
         return word_timestamps
 
@@ -236,9 +270,9 @@ def censor_video(input_path, word_timestamps, output_path):
 if __name__ == "__main__":
     check_ffmpeg()
     
-    input_path = os.path.abspath("test.mp4")
+    input_path = os.path.abspath("test2.mp4")
     fixed_path = os.path.abspath("fixed_input.mp4")
-    output_path = os.path.abspath("censored_output.mp4")
+    output_path = os.path.abspath("censored_output2.mp4")
     
     if not os.path.exists(input_path):
         print(f"Error: Input file '{input_path}' not found")
