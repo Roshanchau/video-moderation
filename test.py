@@ -271,9 +271,9 @@ def censor_video(input_path, word_timestamps, output_path):
 if __name__ == "__main__":
     check_ffmpeg()
     
-    input_path = os.path.abspath("test2.mp4")
+    input_path = os.path.abspath("test3.mp4")
     fixed_path = os.path.abspath("fixed_input.mp4")
-    output_path = os.path.abspath("censored_output2.mp4")
+    output_path = os.path.abspath("censored_output3.mp4")
     
     if not os.path.exists(input_path):
         print(f"Error: Input file '{input_path}' not found")
