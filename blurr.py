@@ -125,7 +125,7 @@ def detect_sensitive_content(video_path: str) -> List[Tuple[float, float, str, T
                     print(f"⚠️ Invalid bounding box: {x1},{y1} - {x2},{y2}")
                     continue
 
-                sensitive_segments.append((start_sec, start_sec + duration, content_type, (x1, y1, x2, y2)))
+                sensitive_segments.append((start_sec, start_sec + duration+2, content_type, (x1, y1, x2, y2)))
                 print(f"⚠️ {content_type} detected at {start_sec:.2f}s - {start_sec+duration:.2f}s: {x1},{y1} to {x2},{y2}")
         
             except Exception as e:
@@ -142,9 +142,18 @@ def detect_sensitive_content(video_path: str) -> List[Tuple[float, float, str, T
         print(f"❌ An error occurred: {e}")
         return []
 
-def blur_region(frame: np.ndarray, bbox: Tuple[int, int, int, int], blur_strength: int = 31) -> np.ndarray:
-    """Blur a specific region in a frame with validation"""
+
+def blur_region(frame: np.ndarray, bbox: Tuple[int, int, int, int], blur_strength: int = 51) -> np.ndarray:
+    """Blur a specific region in a frame with validation and debug visualization"""
+    # Make a copy to avoid modifying original
+    frame = frame.copy()
     x1, y1, x2, y2 = bbox
+    
+    # Debug visualization before blurring (red rectangle)
+    debug_frame = frame.copy()
+    cv2.rectangle(debug_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    cv2.imshow('Debug - Region to Blur', debug_frame)
+    cv2.waitKey(1)  # Briefly show the region
     
     # Ensure coordinates are valid and region has positive size
     x1, y1 = max(0, x1), max(0, y1)
@@ -155,13 +164,22 @@ def blur_region(frame: np.ndarray, bbox: Tuple[int, int, int, int], blur_strengt
         print(f"⚠️ Invalid region: {bbox} in frame of size {frame.shape}")
         return frame
     
-    # Ensure blur strength is odd and positive
-    blur_strength = max(3, blur_strength | 1)  # Forces odd number ≥3
+    # Ensure blur strength is odd and positive (larger for visibility)
+    blur_strength = max(31, blur_strength | 1)  # Forces odd number ≥31
     
     try:
         region = frame[y1:y2, x1:x2]
+        if region.size == 0:
+            print("⚠️ Empty region - skipping blur")
+            return frame
+            
         blurred = cv2.GaussianBlur(region, (blur_strength, blur_strength), 0)
         frame[y1:y2, x1:x2] = blurred
+        
+        # Debug visualization after blurring
+        cv2.imshow('Debug - After Blur', frame[y1:y2, x1:x2])
+        cv2.waitKey(1)
+        
     except Exception as e:
         print(f"⚠️ Blur failed for {bbox}: {str(e)}")
     
@@ -179,11 +197,16 @@ def process_video(input_path: str, output_path: str):
     print(f"\n🔍 Found {len(sensitive_segments)} segments to blur:")
     for i, (start, end, content_type, bbox) in enumerate(sensitive_segments):
         print(f"{i+1}. {content_type} @ {start:.1f}-{end:.1f}s: {bbox}")
+        # Visualize the bounding box
+        print(f"   Bounding box dimensions: width={bbox[2]-bbox[0]}, height={bbox[3]-bbox[1]}")
 
     cap = cv2.VideoCapture(input_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # Create a window for debugging
+    cv2.namedWindow('Processing Debug', cv2.WINDOW_NORMAL)
     
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter('temp_blurred.mp4', fourcc, fps, (width, height))
@@ -196,22 +219,25 @@ def process_video(input_path: str, output_path: str):
             
         current_time = current_frame / fps
         
-        # Debug print every 5 seconds
-        if current_frame % int(fps*5) == 0:
-            print(f"\n⏱️ Processing frame {current_frame} @ {current_time:.1f}s")
-        
         # Apply all relevant blurring for this frame
+        frame_debug = frame.copy()
         for start, end, content_type, bbox in sensitive_segments:
             if start <= current_time <= end:
-                if current_frame % int(fps) == 0:  # Print once per second per segment
-                    print(f"  • Blurring {content_type} @ {current_time:.1f}s: {bbox}")
+                # Draw bounding box on debug frame
+                cv2.rectangle(frame_debug, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
                 frame = blur_region(frame, bbox)
         
+        # Show processing debug
+        cv2.imshow('Processing Debug', frame_debug)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+            
         out.write(frame)
         current_frame += 1
     
     cap.release()
     out.release()
+    cv2.destroyAllWindows()
     print("\n✅ Blurring complete - finalizing video...")
     
     # Combine with original audio
@@ -238,7 +264,7 @@ def process_video(input_path: str, output_path: str):
     print(f"✅ Processing complete! Saved to {output_path}")
 
 if __name__ == "__main__":
-    input_video = "censored_output3.mp4"
+    input_video = "test3.mp4"
     output_video = "final_output_blurred.mp4"
     
     if not os.path.exists(input_video):
