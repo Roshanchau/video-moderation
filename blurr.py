@@ -83,9 +83,9 @@ def detect_sensitive_content(video_path: str) -> List[Tuple[float, float, str, T
         else:
             transcript_text = getattr(response, 'text', '')
 
-        print("\n📜 Raw Analysis Response >>>")
+        print("\n[INFO] Raw Analysis Response >>>")
         print(transcript_text[:500] + "...")  # Print first 500 chars
-        print("📜 Raw Analysis Response End <<<\n")
+        print("[INFO] Raw Analysis Response End <<<\n")
 
         # Clean and parse JSON
         json_start = transcript_text.find("[")
@@ -95,7 +95,7 @@ def detect_sensitive_content(video_path: str) -> List[Tuple[float, float, str, T
         try:
             parsed = json.loads(json_data)
         except Exception as e:
-            print("❌ Failed to parse JSON:", e)
+            print("[ERROR] Failed to parse JSON:", e)
             return []
 
         sensitive_segments = []
@@ -122,24 +122,24 @@ def detect_sensitive_content(video_path: str) -> List[Tuple[float, float, str, T
                 x2, y2 = min(frame_width, x2), min(frame_height, y2)
                 
                 if x1 >= x2 or y1 >= y2:
-                    print(f"⚠️ Invalid bounding box: {x1},{y1} - {x2},{y2}")
+                    print(f"[WARNING] Invalid bounding box: {x1},{y1} - {x2},{y2}")
                     continue
 
-                sensitive_segments.append((start_sec, start_sec + duration+2, content_type, (x1, y1, x2, y2)))
-                print(f"⚠️ {content_type} detected at {start_sec:.2f}s - {start_sec+duration:.2f}s: {x1},{y1} to {x2},{y2}")
+                sensitive_segments.append((start_sec, start_sec + duration, content_type, (x1, y1, x2, y2)))
+                print(f"[INFO] {content_type} detected at {start_sec:.2f}s - {start_sec+duration:.2f}s: {x1},{y1} to {x2},{y2}")
         
             except Exception as e:
-                print(f"⚠️ Skipped malformed entry: {entry} due to {e}")
+                print(f"[WARNING] Skipped malformed entry: {entry} due to {e}")
 
         if sensitive_segments:
-            print("\n✅ Sensitive content found:", sensitive_segments)
+            print("\n[SUCCESS] Sensitive content found:", sensitive_segments)
         else:
-            print("\n✅ No sensitive content detected. Original video is clean.")
+            print("\n[INFO] No sensitive content detected. Original video is clean.")
 
         return sensitive_segments
 
     except Exception as e:
-        print(f"❌ An error occurred: {e}")
+        print(f"[ERROR] An error occurred: {e}")
         return []
 
 
@@ -161,16 +161,16 @@ def blur_region(frame: np.ndarray, bbox: Tuple[int, int, int, int], blur_strengt
     
     # Ensure region has positive dimensions
     if x2 <= x1 or y2 <= y1:
-        print(f"⚠️ Invalid region: {bbox} in frame of size {frame.shape}")
+        print(f"[WARNING] Invalid region: {bbox} in frame of size {frame.shape}")
         return frame
     
     # Ensure blur strength is odd and positive (larger for visibility)
-    blur_strength = max(31, blur_strength | 1)  # Forces odd number ≥31
+    blur_strength = max(31, blur_strength | 1)  # Forces odd number \u226531
     
     try:
         region = frame[y1:y2, x1:x2]
         if region.size == 0:
-            print("⚠️ Empty region - skipping blur")
+            print("[WARNING] Empty region - skipping blur")
             return frame
             
         blurred = cv2.GaussianBlur(region, (blur_strength, blur_strength), 0)
@@ -181,7 +181,7 @@ def blur_region(frame: np.ndarray, bbox: Tuple[int, int, int, int], blur_strengt
         cv2.waitKey(1)
         
     except Exception as e:
-        print(f"⚠️ Blur failed for {bbox}: {str(e)}")
+        print(f"[WARNING] Blur failed for {bbox}: {str(e)}")
     
     return frame
 
@@ -194,7 +194,7 @@ def process_video(input_path: str, output_path: str):
         shutil.copy(input_path, output_path)
         return
 
-    print(f"\n🔍 Found {len(sensitive_segments)} segments to blur:")
+    print(f"\n[INFO] Found {len(sensitive_segments)} segments to blur:")
     for i, (start, end, content_type, bbox) in enumerate(sensitive_segments):
         print(f"{i+1}. {content_type} @ {start:.1f}-{end:.1f}s: {bbox}")
         # Visualize the bounding box
@@ -238,7 +238,7 @@ def process_video(input_path: str, output_path: str):
     cap.release()
     out.release()
     cv2.destroyAllWindows()
-    print("\n✅ Blurring complete - finalizing video...")
+    print("\n[SUCCESS] Blurring complete - finalizing video...")
     
     # Combine with original audio
     try:
@@ -257,17 +257,17 @@ def process_video(input_path: str, output_path: str):
         original_clip.close()
         video_clip.close()
     except Exception as e:
-        print(f"❌ Final composition failed: {e}")
-        shutil.copy('temp_blurred.mp4', output_path)
+        print(f"[ERROR] Final composition failed: {e}")
+        shutil.copy('temp_blurred2.mp4', output_path)
     
     os.remove('temp_blurred.mp4')
-    print(f"✅ Processing complete! Saved to {output_path}")
+    print(f"[SUCCESS] Processing complete! Saved to {output_path}")
 
 if __name__ == "__main__":
-    input_video = "test3.mp4"
-    output_video = "final_output_blurred.mp4"
+    input_video = "censored_output3.mp4"
+    output_video = "final_output_blurred2.mp4"
     
     if not os.path.exists(input_video):
-        print(f"❌ Error: Input file {input_video} not found!")
+        print(f"[ERROR] Error: Input file {input_video} not found!")
     else:
         process_video(input_video, output_video)

@@ -299,7 +299,7 @@ def censor_video(input_path, word_timestamps, output_path):
 if __name__ == "__main__":
     check_ffmpeg()
     
-    input_path = os.path.abspath("test3.mp4")
+    input_path = os.path.abspath("test4.mp4")
     fixed_path = os.path.abspath("fixed_input2.mp4")
     output_path = os.path.abspath("censored_output3.mp4")
     
