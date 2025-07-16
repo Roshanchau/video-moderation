@@ -55,24 +55,37 @@ def detect_sensitive_content(video_path: str) -> List[Tuple[float, float, str, T
         video_bytes = open(video_path, 'rb').read()
 
         response = client.models.generate_content(
-            model='models/gemini-2.5-flash',
+            model='models/gemini-2.5-pro',
             contents=[
                 types.Part(
                     inline_data=types.Blob(data=video_bytes, mime_type='video/mp4')
                 ),
-                types.Part(text="""Analyze this video frame and the corresponding transcript to detect any addresses , phone numbers or sensitive information that appears on screen
-                           in different languages including (Hindi, Telugu, Marathi, etc.).
-        
-        For any detected sensitive information (addresses, phone numbers, vulgar or profanity words etc.), provide:
-        - exact_text: The text content visible on screen
-        - content_type: Type of sensitive content (phone_number, address, profanity, etc.)
-        - timestamp: Estimated time in seconds when this appears
-        - duration: How long it remains visible + 3 to 5 ms for error handling(precision) (in seconds)
-        - position: A bounding box covering the ENTIRE sensitive area, as {"x1": %, "y1": %, "x2": %, "y2": %} relative coordinates (0-100%). Ensure the box is large enough to cover all lines of an address or any other multi-line text. For example, a phone number in the top-left corner would be {"x1": 5, "y1": 5, "x2": 20, "y2": 10}
-        - confidence: Confidence score (0-1)
-        
-        Return only valid JSON array with the structure:
-        [{"exact_text": "...", "content_type": "...", "timestamp": ..., "duration": ..., "position": {...}, "confidence": ...}]""")
+                types.Part(text="""Analyze this video frame by frame to detect and locate any of the following sensitive information that appears visually on screen.
+The analysis should cover all languages present in the video, including but not limited to English, Hindi, Telugu, and Marathi.
+
+For each piece of sensitive information detected, you must provide the following details in a structured JSON format:
+
+-   **exact_text**: The exact text of the sensitive information as it appears on the screen.
+-   **content_type**: The category of the sensitive information. This must be one of the following:
+    -   `phone_number`
+    -   `email_address`
+    -   `physical_address`
+    -   `profanity_or_vulgarism`
+    -   `credit_card_number`
+    -   `personal_name` (if it seems to be part of sensitive contact info)
+    -   `other_sensitive_info`
+-   **timestamp**: The precise start time in seconds when the information first becomes visible.
+-   **duration**: The total duration in seconds for which the information remains visible. Add a small buffer (e.g., 0.5 seconds) to ensure it's fully covered.
+-   **position**: A highly accurate bounding box that tightly encloses the entire sensitive area. The coordinates must be relative to the video frame's dimensions (0-100%). The format is `{"x1": %, "y1": %, "x2": %, "y2": %}`.
+    -   `x1`, `y1`: Top-left corner of the bounding box.
+    -   `x2`, `y2`: Bottom-right corner of the bounding box.
+    -   It is crucial that this box is precise. For multi-line text like an address, the box must cover all lines completely.
+-   **confidence**: A confidence score from 0 to 1 indicating the certainty of the detection.
+
+Return ONLY a valid JSON array containing an object for each detected piece of sensitive information. The structure must be:
+`[{"exact_text": "...", "content_type": "...", "timestamp": ..., "duration": ..., "position": {...}, "confidence": ...}]`
+
+If no sensitive content is found, return an empty array `[]`.""")
             ]
         )
 
@@ -104,52 +117,36 @@ def detect_sensitive_content(video_path: str) -> List[Tuple[float, float, str, T
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         cap.release()
 
-        for entry in parsed:
-            try:
-                start_sec = float(entry['timestamp'])  # Already in seconds
-                duration = float(entry['duration'])
-                content_type = entry.get('content_type', 'sensitive_info')
+        if parsed:
+            all_x1 = [int(p['position']['x1']/100 * frame_width) for p in parsed]
+            all_y1 = [int(p['position']['y1']/100 * frame_height) for p in parsed]
+            all_x2 = [int(p['position']['x2']/100 * frame_width) for p in parsed]
+            all_y2 = [int(p['position']['y2']/100 * frame_height) for p in parsed]
 
-                # Convert normalized bbox to pixel coordinates
-                pos = entry['position']
-                x1 = int(pos['x1']/100 * frame_width)
-                y1 = int(pos['y1']/100 * frame_height)
-                x2 = int(pos['x2']/100 * frame_width)
-                y2 = int(pos['y2']/100 * frame_height)
+            min_x1 = min(all_x1)
+            min_y1 = min(all_y1)
+            max_x2 = max(all_x2)
+            max_y2 = max(all_y2)
 
-                # Expand the bounding box by 20% to ensure full coverage
-                width = x2 - x1
-                height = y2 - y1
-                x1 = int(x1 - width * 0.5)
-                y1 = int(y1 - height * 0.5)
-                x2 = int(x2 + width * 0.5)
-                y2 = int(y2 + height * 0.5)
+            start_time = min(float(p['timestamp']) for p in parsed)
+            end_time = max(float(p['timestamp']) + float(p['duration']) for p in parsed)
 
-                # Ensure valid coordinates
-                x1, y1 = max(0, x1), max(0, y1)
-                x2, y2 = min(frame_width, x2), min(frame_height, y2)
-                
-                # Swap coordinates if they are in the wrong order
-                if x1 > x2:
-                    x1, x2 = x2, x1
-                if y1 > y2:
-                    y1, y2 = y2, y1
+            # Ensure valid coordinates after consolidation
+            min_x1, min_y1 = max(0, min_x1), max(0, min_y1)
+            max_x2, max_y2 = min(frame_width, max_x2), min(frame_height, max_y2)
+            
+            # Swap coordinates if they are in the wrong order
+            if min_x1 > max_x2:
+                min_x1, max_x2 = max_x2, min_x1
+            if min_y1 > max_y2:
+                min_y1, max_y2 = max_y2, min_y1
 
-                if x1 >= x2 or y1 >= y2:
-                    print(f"[WARNING] Invalid bounding box after attempting to fix: {x1},{y1} - {x2},{y2}")
-                    continue
+            if min_x1 >= max_x2 or min_y1 >= max_y2:
+                print(f"[WARNING] Invalid consolidated bounding box: {min_x1},{min_y1} - {max_x2},{max_y2}")
+            else:
+                sensitive_segments.append((start_time, end_time, 'sensitive_info', (min_x1, min_y1, max_x2, max_y2)))
 
-                sensitive_segments.append((start_sec, start_sec + duration, content_type, (x1, y1, x2, y2)))
-                print(f"[INFO] {content_type} detected at {start_sec:.2f}s - {start_sec+duration:.2f}s: {x1},{y1} to {x2},{y2}")
-        
-            except Exception as e:
-                print(f"[WARNING] Skipped malformed entry: {entry} due to {e}")
-
-        if sensitive_segments:
-            print("\n[SUCCESS] Sensitive content found:", sensitive_segments)
-        else:
-            print("\n[INFO] No sensitive content detected. Original video is clean.")
-
+        print(f"[INFO] Sensitive content found:", sensitive_segments)
         return sensitive_segments
 
     except Exception as e:
@@ -157,7 +154,7 @@ def detect_sensitive_content(video_path: str) -> List[Tuple[float, float, str, T
         return []
 
 
-def blur_region(frame: np.ndarray, bbox: Tuple[int, int, int, int], blur_strength: int = 51) -> np.ndarray:
+def blur_region(frame: np.ndarray, bbox: Tuple[int, int, int, int], blur_strength: int = 151) -> np.ndarray:
     """Blur a specific region in a frame with validation and debug visualization"""
     # Make a copy to avoid modifying original
     frame = frame.copy()
@@ -236,18 +233,16 @@ def consolidate_bounding_boxes(segments: List[Tuple[float, float, str, Tuple[int
 def process_video(input_path: str, output_path: str):
     """Main processing function with enhanced debugging"""
     sensitive_segments = detect_sensitive_content(input_path)
-    sensitive_segments = consolidate_bounding_boxes(sensitive_segments)
 
-    # Expand the consolidated bounding boxes
+    # Expand the consolidated bounding boxes by a fixed pixel amount
     expanded_segments = []
+    PIXEL_EXPANSION = 100  # Expand by 100 pixels in each direction
     for start, end, content_type, bbox in sensitive_segments:
         x1, y1, x2, y2 = bbox
-        width = x2 - x1
-        height = y2 - y1
-        x1 = int(x1 - width * 0.5)
-        y1 = int(y1 - height * 0.5)
-        x2 = int(x2 + width * 0.5)
-        y2 = int(y2 + height * 0.5)
+        x1 = int(x1 - PIXEL_EXPANSION)
+        y1 = int(y1 - PIXEL_EXPANSION)
+        x2 = int(x2 + PIXEL_EXPANSION)
+        y2 = int(y2 + PIXEL_EXPANSION)
         expanded_segments.append((start, end, content_type, (x1, y1, x2, y2)))
     sensitive_segments = expanded_segments
     
@@ -289,6 +284,8 @@ def process_video(input_path: str, output_path: str):
                 # Draw bounding box on debug frame
                 cv2.rectangle(frame_debug, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
                 frame = blur_region(frame, bbox)
+                # Draw bounding box on the final frame
+                cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 0, 255), 2)
         
         # Show processing debug
         cv2.imshow('Processing Debug', frame_debug)
